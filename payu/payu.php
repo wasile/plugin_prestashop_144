@@ -387,7 +387,9 @@ class PayU extends PaymentModule
 			'PAYU_EPAYMENT_MERCHANT' => Configuration::get('PAYU_EPAYMENT_MERCHANT'),
 			'PAYU_EPAYMENT_SECRET_KEY' => Configuration::get('PAYU_EPAYMENT_SECRET_KEY'),
 			'PAYU_EPAYMENT_IPN' => Configuration::get('PAYU_EPAYMENT_IPN'),
-			'PAYU_EPAYMENT_IPN_URL' => Context::getContext()->link->getModuleLink('payu', 'ipn'),
+			'PAYU_EPAYMENT_IPN_URL' => version_compare(_PS_VERSION_, '1.5', 'lt') ?
+				$this->getModuleAddress().'backward_compatibility/ipn.php':
+				Context::getContext()->link->getModuleLink('payu', 'ipn'),
 			'PAYU_EPAYMENT_IPN_OPTIONS' => array(
 				array(
 					'id' => '1',
@@ -448,13 +450,13 @@ class PayU extends PaymentModule
 		elseif (version_compare(_PS_VERSION_, '1.5', 'lt'))
 		{
 			$views = 'views/templates/';
-			if (filemtime(dirname(__FILE__).'/'.$name))
+			if (file_exists(dirname(__FILE__).'/'.$name))
 				return $this->display(__FILE__, $name);
-			elseif (filemtime(dirname(__FILE__).'/'.$views.'hook/'.$name))
+			elseif (file_exists(dirname(__FILE__).'/'.$views.'hook/'.$name))
 				return $this->display(__FILE__, $views.'hook/'.$name);
-			elseif (filemtime(dirname(__FILE__).'/'.$views.'front/'.$name))
+			elseif (file_exists(dirname(__FILE__).'/'.$views.'front/'.$name))
 				return $this->display(__FILE__, $views.'front/'.$name);
-			elseif (filemtime(dirname(__FILE__).'/'.$views.'admin/'.$name))
+			elseif (file_exists(dirname(__FILE__).'/'.$views.'admin/'.$name))
 				return $this->display(__FILE__, $views.'admin/'.$name);
 		}
 
@@ -466,14 +468,13 @@ class PayU extends PaymentModule
 	 */
 	public function hookBackOfficeHeader()
 	{
-		$this->context->controller->addCSS(_MODULE_DIR_.$this->name.'/css/payu.css');
-
 		$default_lang = (int)Configuration::get('PS_LANG_DEFAULT');
 		$lang_iso_code = Language::getIsoById($default_lang);
 
 		$media = $this->getMediaResourcesList($lang_iso_code);
 
 		$output = '<script type="text/javascript">var business_platforms = '.Tools::jsonEncode($this->getBusinessPartnersPayU($media)).';</script>';
+		$output .= '<link type="text/css" rel="stylesheet" href="'._MODULE_DIR_.$this->name.'/css/payu.css" />';
 
 		$vieworder = Tools::getValue('vieworder');
 		$id_order = Tools::getValue('id_order');
@@ -577,7 +578,8 @@ class PayU extends PaymentModule
 
 				if (!isset($irn_response['RESPONSE_CODE']) || 1 != $irn_response['RESPONSE_CODE'])
 				{
-					$error = isset($irn_response['RESPONSE_MSG'])?$irn_response['RESPONSE_MSG']:(is_string($irn_response)?strip_tags($irn_response):'unknown');
+					$error = isset($irn_response['RESPONSE_MSG'])?$irn_response['RESPONSE_MSG']:
+						(is_string($irn_response['RESPONSE'])?strip_tags($irn_response['RESPONSE']):'unknown');
 					$refund_errors[] = $this->l('Refund error: ').$error;
 				}
 
@@ -657,11 +659,10 @@ class PayU extends PaymentModule
 
 		$this->context->smarty->assign('payu_refund_errors', $refund_errors);
 
-        if (version_compare(_PS_VERSION_, '1.6', 'lt')) {
-            $template = $output.$this->fetchTemplate('/views/templates/admin/header.tpl');
-        } else {
-            $template = $output.$this->fetchTemplate('/views/templates/admin/header16.tpl');
-        }
+		if (version_compare(_PS_VERSION_, '1.6', 'lt'))
+			$template = $output.$this->fetchTemplate('/views/templates/admin/header.tpl');
+		else
+			$template = $output.$this->fetchTemplate('/views/templates/admin/header16.tpl');
 
 		return $template;
 	}
@@ -824,12 +825,12 @@ class PayU extends PaymentModule
 		return $this->fetchTemplate('/views/templates/hook/advertisement.tpl');
 	}
 
-	/**
-	 *
-	 */
-	public function hookDisplayHeader()
+	public function hookHeader()
 	{
 		$this->context->controller->addCSS($this->_path.'css/payu.css', 'all');
+
+		if (Tools::getValue('payu_order_error'))
+			return sprintf('<script>alert(%s);</script>', ToolsCore::jsonEncode($this->l('An error occurred when processing the order')));
 	}
 
 	/**
@@ -849,11 +850,10 @@ class PayU extends PaymentModule
 
 		$this->context->smarty->assign(array('image' => $img, 'actionUrl' => $link));
 
-        if (version_compare(_PS_VERSION_, '1.6', 'lt')) {
-            $template = $this->fetchTemplate('/views/templates/hook/payment.tpl');
-        } else {
-            $template = $this->fetchTemplate('/views/templates/hook/payment16.tpl');
-        }
+		if (version_compare(_PS_VERSION_, '1.6', 'lt'))
+			$template = $this->fetchTemplate('/views/templates/hook/payment.tpl');
+		else
+			$template = $this->fetchTemplate('/views/templates/hook/payment16.tpl');
 
 		return $template;
 	}
@@ -1287,9 +1287,7 @@ class PayU extends PaymentModule
 				);*/
 			}
 			else
-			{
 				Logger::addLog($this->displayName.' '.trim($result->getError().' '.$result->getMessage()), 1);
-			}
 		}
 		catch(Exception $e){
 			Logger::addLog($this->displayName.' '.trim($e->getCode().' '.$e->getMessage()), 1);
